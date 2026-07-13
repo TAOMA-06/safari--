@@ -1,100 +1,118 @@
 # YouTube 双语字幕
 
-在 YouTube 上同时显示**原文 + 译文**字幕的浏览器扩展（Chrome / Safari Web Extension 兼容）。
+> 在 YouTube 播放器中同时显示原文和译文字幕的浏览器扩展。
 
-> 当前版本：`0.2.0`。已实现双轨 timedtext 拉取、时间对齐与播放器内双语叠放（Phase 1 + Phase 2 核心）。
+[![Version](https://img.shields.io/badge/version-0.3.0-2d8a4e)](./manifest.json)
+[![Chrome](https://img.shields.io/badge/Chrome-tested-4285F4?logo=googlechrome&logoColor=white)](#chrome-%E5%AE%89%E8%A3%85)
+[![Safari](https://img.shields.io/badge/Safari-Web%20Extension-006CFF?logo=safari&logoColor=white)](#safari-%E8%B0%83%E8%AF%95)
 
-## 当前能力
+YouTube 双语字幕会自动读取当前视频的字幕轨道，将原文与目标语言按时间对齐，然后以两行字幕叠放在播放器中。如果视频没有独立译文轨，扩展会尝试使用 YouTube 自带的翻译能力。
 
-- 从播放器读取 `captionTracks`（主世界桥接 `page-bridge.js`，DOM 解析兜底）
-- 按 popup 的原语言 / 目标语言选轨；无独立译轨时对原文轨加 `tlang=` 请求翻译
-- 拉取 `fmt=json3` timedtext，按时间重叠 / 最近邻（约 400ms）对齐
-- 在播放器内叠放 `#yt-bilingual-overlay`（原文一行、译文一行），`requestAnimationFrame` 跟 `video.currentTime`
-- 启用双语时弱化原生单语字幕，避免叠字
-- 尊重「启用」开关、调试标记；`chrome.storage` 变更热更新
-- SPA 换视频：`yt-navigate-finish` / `history` / URL MutationObserver 重载
+## 功能亮点
 
-## 目录结构
+- 同时显示英文原文和简体中文译文
+- 支持人工字幕和自动生成字幕
+- 无独立译轨时自动使用 `tlang` 翻译
+- 按时间重叠和最近时间点对齐双轨字幕
+- 广告期间等待主视频授权，广告结束后自动加载
+- 支持 YouTube 站内切换视频，无需整页刷新
+- 语言和开关修改后立即热更新
+- 兼容 Chrome Manifest V3 和 Safari Web Extension
 
+## 界面说明
+
+点击浏览器工具栏中的扩展图标，可以设置：
+
+| 选项 | 作用 |
+| --- | --- |
+| 启用插件 | 显示或关闭双语字幕 |
+| 调试标记 | 在页面右上角显示轨道加载状态和字幕数量 |
+| 原语言 | 选择原文字幕语言，默认为 English |
+| 目标语言 | 选择译文语言，默认为简体中文 |
+
+播放器中的显示顺序为：
+
+```text
+Original English subtitle
+简体中文译文
 ```
-safari插件/
-├── manifest.json                 # MV3，含 web_accessible_resources（page-bridge）
+
+## Chrome 安装
+
+1. 下载或克隆本项目。
+2. 在 Chrome 地址栏输入 `chrome://extensions/`。
+3. 开启右上角的「开发者模式」。
+4. 点击「加载已解压的扩展程序」。
+5. 选择包含 `manifest.json` 的项目根目录。
+6. 打开一个带字幕的 YouTube 视频。
+
+扩展会默认以「English → 简体中文」显示双语字幕。
+
+## Safari 调试
+
+Safari 需要先将源码转换为 Safari Web Extension Xcode 工程：
+
+```bash
+xcrun safari-web-extension-converter "/path/to/youtube-bilingual-captions" \
+  --project-location "/path/to/output" \
+  --app-name "YouTubeBilingualCaptions" \
+  --bundle-identifier "com.example.yt-bilingual-captions"
+```
+
+然后在 Xcode 中运行生成的宿主 App，并前往 Safari 「设置 → 扩展」启用扩展。
+
+## 实测状态
+
+`0.3.0` 已在 Chrome 中使用真实 YouTube 播放页验证：
+
+- 测试视频：`But what is a neural network? | Deep learning chapter 1`
+- 识别并对齐 286 条字幕
+- 英文原文与简体中文同时显示
+- 广告结束后可自动加载字幕
+- 调试标记开启时页面保持流畅
+
+## 工作原理
+
+1. `page-bridge.js` 在 YouTube 页面主世界中读取播放器响应和字幕轨道。
+2. 复用 YouTube 播放器生成的 Proof-of-Origin Token，请求 timedtext 字幕。
+3. 优先解析 JSON3，失败时回退到 WebVTT。
+4. 将原文和译文按时间区间重叠或最近中点对齐。
+5. 根据 `video.currentTime` 在播放器内渲染双行字幕。
+
+## 隐私
+
+扩展不需要服务器，不上传观看记录或字幕内容。语言和开关设置仅保存在浏览器的扩展存储中。
+
+## 项目结构
+
+```text
+.
+├── manifest.json
 ├── background/
-│   └── service-worker.js         # 设置默认值、消息中转
+│   └── service-worker.js
 ├── content/
-│   ├── youtube-bilingual.js      # 双语引擎（选轨 / 拉取 / 对齐 / 渲染）
-│   ├── page-bridge.js            # 注入主世界，读取 player response
+│   ├── page-bridge.js
+│   ├── youtube-bilingual.js
 │   └── youtube-bilingual.css
 ├── popup/
 │   ├── popup.html
 │   ├── popup.css
 │   └── popup.js
-├── icons/
-│   ├── generate-icons.py
-│   └── icon{16,32,48,128}.png
-└── README.md
+└── icons/
 ```
-
-## 在 Chrome 中加载测试
-
-1. 打开 `chrome://extensions`
-2. 开启「开发者模式」
-3. 「加载已解压的扩展程序」→ 选择本目录（含 `manifest.json`）
-4. 打开带 CC 的视频，例如：https://www.youtube.com/watch?v=jNQXAC9IVRw
-5. 在播放器底部附近应看到**两行字幕**（原文 + 译文）；原生单语字幕会被弱化
-6. 右上角调试条（可关）显示加载状态，例如「双语就绪 · N 条」
-7. 打开扩展 popup：切换语言 / 关闭启用，页面应热更新
-8. DevTools Console 可搜 `[yt-bilingual]` 查看轨列表与对齐条数
-
-建议验证：
-
-- [ ] 有人工英文字幕的视频：英文 + 简中
-- [ ] 仅有自动生成（asr）字幕的视频
-- [ ] 无目标语言独立轨时，仍能通过翻译出中文
-- [ ] 站内点另一个视频（不整页刷新）后双语重载
-- [ ] 关闭「启用插件」后叠放消失、原生字幕恢复
-
-## 在 Safari 中加载调试（macOS）
-
-Safari 使用 **Web Extension**；可用 Apple 转换工具从本目录生成 Xcode 工程：
-
-```bash
-xcrun safari-web-extension-converter "/Users/taoma/Documents/safari插件" \
-  --project-location "/Users/taoma/Documents" \
-  --app-name "YouTubeBilingualCaptions" \
-  --bundle-identifier "com.example.yt-bilingual-captions"
-```
-
-然后：
-
-1. 用 Xcode 打开生成的工程并 Run（会安装宿主 App）
-2. Safari → 设置 → 扩展 → 启用「YouTube 双语字幕」
-3. 开发菜单中允许未签名扩展（若需要）
-4. 打开 YouTube 验证双语叠放与调试标记
-
-> 若曾转换过旧版，请重新 converter 一次以带上 `page-bridge.js` 与新的 `web_accessible_resources`。
-
-## 技术要点
-
-| 模块 | 说明 |
-|------|------|
-| `page-bridge.js` | 主世界读取 `getPlayerResponse()` / `ytInitialPlayerResponse` |
-| `fetchTimedText` | `baseUrl` + `fmt=json3`（可选 `tlang`） |
-| `alignCues` | 重叠优先，否则中点距离 ≤ 400ms |
-| Overlay | 挂在 `.html5-video-player`，不依赖原生字幕是否已开启 |
 
 ## 已知限制
 
-- 依赖 YouTube 非公开 timedtext / player 结构，站点改版可能导致失效
-- 直播、部分会员/版权限制、完全无字幕视频：降级为空，不崩溃
-- 广告时段可能短暂无对应字幕或错位
-- ASR 与翻译轨切分不一致时，个别句子对齐可能偏移
-- Popup 语言列表仍为固定选项，尚未按当前视频 `captionTracks` 动态填充
-- 未在本环境对真实 YouTube 页面做端到端实测；请按上文清单手动验证
+- 依赖 YouTube 的播放器和 timedtext 内部接口，站点改版后可能需要更新。
+- 无字幕、直播、会员限制或版权限制视频可能无法显示双语字幕。
+- 自动字幕和翻译轨切分方式不同时，少数句子可能有轻微时间偏差。
+- Safari 版本需要使用 Xcode 转换、签名和安装。
 
-## 后续可选
+## 开发检查
 
-- Popup 根据当前视频轨列表动态填充语言
-- 字体大小 / 位置 / 透明度设置
-- 广告检测后主动隐藏 overlay
-- Background 代理 timedtext（若遇个别环境下的网络限制）
+```bash
+node --check content/youtube-bilingual.js
+node --check content/page-bridge.js
+node --check background/service-worker.js
+node --check popup/popup.js
+```

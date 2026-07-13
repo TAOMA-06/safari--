@@ -56,6 +56,8 @@
   let requestSeq = 0;
   let settingsReloadTimer = 0;
   let navigateTimer = 0;
+  let authRetryTimer = 0;
+  let timedTextAuthParams = {};
 
   // ---------------------------------------------------------------------------
   // Settings
@@ -157,9 +159,14 @@
       ? "双语字幕插件已加载 · 检测到字幕区域"
       : "双语字幕插件已加载 · 等待字幕开启";
 
-    el.textContent = statusDetail
+    const nextText = statusDetail
       ? `${base} · ${statusText} · ${statusDetail}`
       : `${base} · ${statusText}`;
+    // urlWatcher 会观察整棵 DOM。每次都重写 textContent 会再次触发
+    // childList 变化，形成 MutationObserver 自激循环并卡死 YouTube。
+    if (el.textContent !== nextText) {
+      el.textContent = nextText;
+    }
     el.dataset.caption = captionPresent ? "1" : "0";
     el.dataset.status = engineStatus;
   }
@@ -208,7 +215,7 @@
     }
   }
 
-  function bridgeRequest(type, timeoutMs = 4000) {
+  function bridgeRequest(type, timeoutMs = 4000, detail = {}) {
     ensureBridge();
     const requestId = ++requestSeq;
 
@@ -232,6 +239,7 @@
             direction: "request",
             requestId,
             type,
+            ...detail,
           },
           "*"
         );
@@ -337,6 +345,9 @@
       const payload = await bridgeRequest("GET_CAPTION_TRACKS");
       if (payload?.tracks?.length) {
         if (payload.videoId) currentVideoId = payload.videoId;
+        if (payload.timedTextParams?.pot) {
+          timedTextAuthParams = payload.timedTextParams;
+        }
         return payload.tracks;
       }
       if (payload?.error) {
@@ -360,22 +371,100 @@
    * @returns {Promise<Array<{ startMs: number, durMs: number, text: string }>>}
    */
   async function fetchTimedText(baseUrl, opts = {}) {
-    const url = new URL(baseUrl);
-    url.searchParams.set("fmt", "json3");
-    if (opts.tlang) {
-      url.searchParams.set("tlang", opts.tlang);
+    const failures = [];
+
+    // YouTube 会偶尔对 fmt=json3 返回 200 + 空响应，而同一轨道的
+    // WebVTT 仍可用。依次尝试两种格式，避免空响应直接 res.json() 崩溃。
+    for (const format of ["json3", "vtt"]) {
+      const url = new URL(baseUrl);
+      for (const [key, value] of Object.entries(timedTextAuthParams)) {
+        if (value) url.searchParams.set(key, value);
+      }
+      url.searchParams.set("fmt", format);
+      if (opts.tlang) {
+        url.searchParams.set("tlang", opts.tlang);
+      }
+
+      try {
+        const res = await fetch(url.toString(), {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          failures.push(`${format}: HTTP ${res.status}`);
+          continue;
+        }
+
+        const raw = await res.text();
+        if (!raw.trim()) {
+          failures.push(`${format}: empty`);
+          continue;
+        }
+
+        const cues =
+          format === "json3"
+            ? parseJson3Events(JSON.parse(raw))
+            : parseVtt(raw);
+        if (cues.length) return cues;
+        failures.push(`${format}: no cues`);
+      } catch (error) {
+        failures.push(`${format}: ${String(error?.message || error)}`);
+      }
     }
 
-    const res = await fetch(url.toString(), {
-      credentials: "include",
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(`timedtext HTTP ${res.status}`);
+    throw new Error(`timedtext unavailable (${failures.join("; ")})`);
+  }
+
+  function parseVttTimestamp(value) {
+    const parts = String(value || "").replace(",", ".").split(":");
+    if (parts.length < 2 || parts.length > 3) return null;
+    const seconds = Number(parts.pop());
+    const minutes = Number(parts.pop());
+    const hours = parts.length ? Number(parts.pop()) : 0;
+    if (![hours, minutes, seconds].every(Number.isFinite)) return null;
+    return Math.round((hours * 3600 + minutes * 60 + seconds) * 1000);
+  }
+
+  function decodeVttText(value) {
+    return String(value || "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function parseVtt(raw) {
+    const blocks = String(raw || "")
+      .replace(/\r/g, "")
+      .split(/\n{2,}/);
+    const cues = [];
+
+    for (const block of blocks) {
+      const lines = block.split("\n").map((line) => line.trim());
+      const timingIndex = lines.findIndex((line) => line.includes("-->"));
+      if (timingIndex < 0) continue;
+
+      const timing = lines[timingIndex].match(
+        /((?:\d+:)?\d{2}:\d{2}[.,]\d{3})\s+-->\s+((?:\d+:)?\d{2}:\d{2}[.,]\d{3})/
+      );
+      if (!timing) continue;
+
+      const startMs = parseVttTimestamp(timing[1]);
+      const endMs = parseVttTimestamp(timing[2]);
+      const text = decodeVttText(lines.slice(timingIndex + 1).join(" "));
+      if (startMs == null || endMs == null || endMs <= startMs || !text) {
+        continue;
+      }
+
+      cues.push({ startMs, durMs: endMs - startMs, text });
     }
 
-    const data = await res.json();
-    return parseJson3Events(data);
+    return cues;
   }
 
   function parseJson3Events(data) {
@@ -415,6 +504,23 @@
 
   function langMatches(trackLang, wanted) {
     const t = String(trackLang || "").toLowerCase();
+    const wantedKey = String(wanted || "").toLowerCase();
+    // 不能让通用别名 zh 把简体和繁体互相命中。
+    if ((wantedKey === "zh-hans" || wantedKey === "zh-hant") && t === "zh") {
+      return false;
+    }
+    if (
+      wantedKey === "zh-hans" &&
+      (t.startsWith("zh-hant") || t === "zh-tw" || t === "zh-hk")
+    ) {
+      return false;
+    }
+    if (
+      wantedKey === "zh-hant" &&
+      (t.startsWith("zh-hans") || t === "zh-cn" || t === "zh-sg")
+    ) {
+      return false;
+    }
     const wantedList = expandLangCodes(wanted);
     if (wantedList.includes(t)) return true;
     // 前缀：en-US vs en
@@ -460,7 +566,9 @@
       };
     }
 
-    const tlang = expandLangCodes(targetLang)[0] || targetLang;
+    // tlang 的中文代码在 YouTube 上区分大小写（zh-Hans / zh-Hant）。
+    // 轨道匹配时可以小写化，但请求参数必须保留规范写法。
+    const tlang = LANG_ALIASES[targetLang]?.[0] || targetLang;
     if (sourceTrack?.isTranslatable !== false && sourceTrack?.baseUrl) {
       return { track: sourceTrack, tlang, mode: "tlang-source" };
     }
@@ -700,6 +808,7 @@
   }
 
   function stopEngine() {
+    clearTimeout(authRetryTimer);
     stopTicker();
     alignedCues = [];
     removeOverlay();
@@ -801,6 +910,31 @@
         settings.targetLang
       );
 
+      try {
+        const authPayload = await bridgeRequest("GET_TIMEDTEXT_PARAMS", 5000, {
+          sourceLang: sourceTrack.languageCode || settings.sourceLang,
+        });
+        if (generation !== loadGeneration) return;
+        if (authPayload?.timedTextParams?.pot) {
+          timedTextAuthParams = authPayload.timedTextParams;
+        }
+      } catch (error) {
+        console.warn("[yt-bilingual] timedtext auth unavailable", error);
+      }
+
+      if (!timedTextAuthParams.pot) {
+        // 广告期间主视频的原生字幕请求尚未发生，pot 也就
+        // 尚未生成。等待播放器就绪后重试，不把这种暂时状态报为失败。
+        setStatus(STATUS.loading, "等待播放器字幕授权…");
+        applyDebugMarker();
+        clearTimeout(authRetryTimer);
+        authRetryTimer = setTimeout(() => {
+          startBilingualEngine({ force: true });
+        }, 1500);
+        return;
+      }
+      clearTimeout(authRetryTimer);
+
       const sourcePromise = fetchTimedText(sourceTrack.baseUrl);
       let targetPromise;
 
@@ -811,7 +945,18 @@
           tlang: targetAccess.tlang,
         });
       } else {
-        targetPromise = fetchTimedText(targetAccess.track.baseUrl);
+        targetPromise = fetchTimedText(targetAccess.track.baseUrl).catch(
+          async (error) => {
+            // 个别独立译轨会返回空内容；改用原文轨 + tlang 重试。
+            if (sourceTrack.isTranslatable === false) throw error;
+            console.warn(
+              "[yt-bilingual] target track failed, retrying tlang",
+              error
+            );
+            const tlang = LANG_ALIASES[settings.targetLang]?.[0] || settings.targetLang;
+            return fetchTimedText(sourceTrack.baseUrl, { tlang });
+          }
+        );
       }
 
       const [sourceCues, targetCues] = await Promise.all([
@@ -874,6 +1019,7 @@
     }
     console.log("[yt-bilingual] navigation", location.href);
     lastHandledVideoId = videoId;
+    timedTextAuthParams = {};
     stopEngine();
     if (!videoId) {
       setStatus(STATUS.idle, "");

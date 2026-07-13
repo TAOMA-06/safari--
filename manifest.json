@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube 双语字幕",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "在 YouTube 上同时显示原文与译文字幕（Safari / Chrome 兼容 Web Extension）",
   "icons": {
     "16": "icons/icon16.png",
