@@ -38,6 +38,7 @@
     debugMarker: true,
     sourceLang: "en",
     targetLang: "zh-Hans",
+    fontScale: 100,
   };
 
   /** @type {Array<{ startMs: number, durMs: number, sourceText: string, targetText: string }>} */
@@ -63,6 +64,25 @@
   // Settings
   // ---------------------------------------------------------------------------
 
+  function normalizeFontScale(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 100;
+    return Math.min(400, Math.max(50, Math.round(parsed / 10) * 10));
+  }
+
+  function applyOverlayFontScale(overlay = document.getElementById(OVERLAY_ID)) {
+    if (!overlay) return;
+    const scale = normalizeFontScale(settings.fontScale) / 100;
+    // 将缩放后的数值作为 CSS 变量传入，避免依赖尚未普及的 CSS 乘法语法。
+    overlay.style.setProperty("--yt-bi-target-min", `${14 * scale}px`);
+    overlay.style.setProperty("--yt-bi-target-preferred", `${2.1 * scale}vw`);
+    overlay.style.setProperty("--yt-bi-target-max", `${22 * scale}px`);
+    overlay.style.setProperty("--yt-bi-source-min", `${12 * scale}px`);
+    overlay.style.setProperty("--yt-bi-source-preferred", `${1.7 * scale}vw`);
+    overlay.style.setProperty("--yt-bi-source-max", `${18 * scale}px`);
+    overlay.dataset.fontScale = String(normalizeFontScale(settings.fontScale));
+  }
+
   function loadSettings() {
     return new Promise((resolve) => {
       try {
@@ -72,6 +92,7 @@
             return;
           }
           if (res) settings = { ...settings, ...res };
+          settings.fontScale = normalizeFontScale(settings.fontScale);
           resolve(settings);
         });
       } catch {
@@ -84,6 +105,7 @@
     if (area !== "sync") return;
     let langChanged = false;
     let enabledChanged = false;
+    let fontScaleChanged = false;
 
     for (const [key, { newValue }] of Object.entries(changes)) {
       const prev = settings[key];
@@ -92,7 +114,11 @@
         if (prev !== newValue) langChanged = true;
       }
       if (key === "enabled" && prev !== newValue) enabledChanged = true;
+      if (key === "fontScale" && prev !== newValue) fontScaleChanged = true;
     }
+
+    settings.fontScale = normalizeFontScale(settings.fontScale);
+    if (fontScaleChanged) applyOverlayFontScale();
 
     applyDebugMarker();
 
@@ -535,10 +561,8 @@
   function pickSourceTrack(tracks, sourceLang) {
     const matched = tracks.filter((t) => langMatches(t.languageCode, sourceLang));
     if (!matched.length) {
-      // 回退：任意英文 / 第一条
-      const en = tracks.filter((t) => langMatches(t.languageCode, "en"));
-      const pool = en.length ? en : tracks;
-      return pickPreferManual(pool);
+      // 原语言必须与用户选择一致；不能在选择日语时悄悄回退成英文。
+      return null;
     }
     return pickPreferManual(matched);
   }
@@ -689,6 +713,7 @@
     el.innerHTML =
       '<span class="yt-bi-line source"></span><span class="yt-bi-line target"></span>';
     root.appendChild(el);
+    applyOverlayFontScale(el);
     // DOM 被外部移除后重建时，须清空缓存，否则会跳过往新节点写入文本
     lastRenderedKey = "";
     return el;

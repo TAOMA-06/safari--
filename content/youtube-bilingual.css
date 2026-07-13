@@ -55,7 +55,11 @@
   padding: 3px 10px;
   background: rgba(8, 8, 8, 0.78);
   color: #fff;
-  font-size: clamp(14px, 2.1vw, 22px);
+  font-size: clamp(
+    var(--yt-bi-target-min, 14px),
+    var(--yt-bi-target-preferred, 2.1vw),
+    var(--yt-bi-target-max, 22px)
+  );
   line-height: 1.35;
   width: fit-content;
   max-width: 100%;
@@ -70,7 +74,11 @@
 
 #yt-bilingual-overlay .yt-bi-line.source {
   opacity: 0.92;
-  font-size: clamp(12px, 1.7vw, 18px);
+  font-size: clamp(
+    var(--yt-bi-source-min, 12px),
+    var(--yt-bi-source-preferred, 1.7vw),
+    var(--yt-bi-source-max, 18px)
+  );
   background: rgba(8, 8, 8, 0.68);
 }
 

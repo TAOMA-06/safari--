@@ -51,6 +51,30 @@ select {
   font: inherit;
 }
 
+.range-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: #2d8a4e;
+}
+
+output {
+  min-width: 42px;
+  color: #2d8a4e;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.field-hint {
+  color: #666;
+  font-size: 11px;
+}
+
 .hint {
   margin: 12px 0 0;
   padding-top: 10px;

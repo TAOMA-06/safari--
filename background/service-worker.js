@@ -9,6 +9,8 @@ const DEFAULT_SETTINGS = {
   debugMarker: true,
   sourceLang: "en",
   targetLang: "zh-Hans",
+  // 以 YouTube 原生字幕的百分比概念保存，范围 50%–400%。
+  fontScale: 100,
   layout: "stacked", // stacked | side-by-side（Phase 2）
 };
 

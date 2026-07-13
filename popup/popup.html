@@ -47,6 +47,23 @@
       </select>
     </label>
 
+    <label class="field">
+      <span>字幕大小</span>
+      <span class="range-control">
+        <input
+          type="range"
+          id="fontScale"
+          min="50"
+          max="400"
+          step="10"
+          value="100"
+          aria-describedby="fontScaleHint"
+        />
+        <output id="fontScaleValue" for="fontScale">100%</output>
+      </span>
+      <small id="fontScaleHint" class="field-hint">50%–400%，拖动后立即应用到播放器。</small>
+    </label>
+
     <p class="hint">
       打开带字幕的 YouTube 视频即可显示双语。无独立译轨时会通过 tlang 自动翻译。改语言后会热更新。
     </p>
