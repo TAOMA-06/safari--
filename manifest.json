@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube 双语字幕",
+  "version": "0.2.0",
+  "description": "在 YouTube 上同时显示原文与译文字幕（Safari / Chrome 兼容 Web Extension）",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "YouTube 双语字幕",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "*://youtube.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://youtube.com/*"
+      ],
+      "js": ["content/youtube-bilingual.js"],
+      "css": ["content/youtube-bilingual.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/page-bridge.js"],
+      "matches": [
+        "*://www.youtube.com/*",
+        "*://youtube.com/*"
+      ]
+    }
+  ]
+}

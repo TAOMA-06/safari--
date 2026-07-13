@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube 双语字幕</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>双语字幕</h1>
+      <p class="sub">原文 + 译文叠放</p>
+    </header>
+
+    <label class="row">
+      <span>启用插件</span>
+      <input type="checkbox" id="enabled" />
+    </label>
+
+    <label class="row">
+      <span>调试标记</span>
+      <input type="checkbox" id="debugMarker" />
+    </label>
+
+    <label class="field">
+      <span>原语言（source）</span>
+      <select id="sourceLang">
+        <option value="en">English (en)</option>
+        <option value="ja">日本語 (ja)</option>
+        <option value="ko">한국어 (ko)</option>
+        <option value="zh-Hans">中文简体 (zh-Hans)</option>
+        <option value="zh-Hant">中文繁體 (zh-Hant)</option>
+        <option value="es">Español (es)</option>
+        <option value="fr">Français (fr)</option>
+        <option value="de">Deutsch (de)</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span>目标语言（target）</span>
+      <select id="targetLang">
+        <option value="zh-Hans">中文简体 (zh-Hans)</option>
+        <option value="zh-Hant">中文繁體 (zh-Hant)</option>
+        <option value="en">English (en)</option>
+        <option value="ja">日本語 (ja)</option>
+        <option value="ko">한국어 (ko)</option>
+      </select>
+    </label>
+
+    <p class="hint">
+      打开带字幕的 YouTube 视频即可显示双语。无独立译轨时会通过 tlang 自动翻译。改语言后会热更新。
+    </p>
+
+    <p id="status" class="status" hidden></p>
+    <script src="popup.js"></script>
+  </body>
+</html>
